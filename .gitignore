@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+betting_env/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+.tox/
+.mypy_cache/
+*.log
+
+# Virtual Environment
+betting_env/
+.env
+.venv
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Data files (optional - remove if you want to track these)
+# *.pkl
+# *.pickle
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.bak
+
+# Project specific
+live_growth_payload.pkl

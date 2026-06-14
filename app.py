@@ -7,16 +7,26 @@ import os
 
 st.set_page_config(page_title="GGR & Deposit Forecasting Model", layout="wide")
 
-def load_payload():
+# Import forecast engine
+try:
+    from forecast_engine import run_main_forecasting_pipeline
+except ImportError:
+    st.error("❌ forecast_engine.py not found. Please ensure it's in the same directory.")
+    st.stop()
+
+def load_or_generate_payload():
+    """Load existing payload or generate if missing"""
     if not os.path.exists('live_growth_payload.pkl'):
-        return None
+        st.info("📊 Generating forecast data for first time use... This may take a moment.")
+        with st.spinner("Running forecast engine..."):
+            run_main_forecasting_pipeline()
+        st.success("✅ Forecast data generated successfully!")
+    
     with open('live_growth_payload.pkl', 'rb') as f:
         return pickle.load(f)
 
-payload = load_payload()
-if payload is None:
-    st.error("❌ Data Payload asset missing. Run forecast_engine.py first.")
-    st.stop()
+# Load or generate payload
+payload = load_or_generate_payload()
 
 lgb_df = payload['lgb_projections']
 sari_df = payload['sari_projections']
@@ -24,7 +34,7 @@ actuals = payload['actuals_2026']
 metrics = payload['metrics']
 
 st.title("📊 GGR & Deposit Forecasting Model")
-st.markdown("### Benchmarked Strictly Against Q1 2026 Operational Milestones")
+st.markdown("### Executive Performance & Projections Hub")
 st.markdown("---")
 
 selected_kpi = st.sidebar.selectbox("Select Target Metric:", ["GGR", "Deposits"])
@@ -124,33 +134,28 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------------------------------------------------------
-# DATAFRAME - HONEST VARIANCE CALCULATIONS (ONLY WHERE DATA IS COMPLETE)
+# DATAFRAME - HONEST VARIANCE CALCULATIONS
 # -------------------------------------------------------------------------
 st.header("💼 Corporate Performance Ledger Sheets")
 
 def format_millions_with_comma(value):
-    """Format value (already in millions) with comma as decimal separator"""
     if pd.isna(value):
         return None
     return f"{abs(value):.8f}".replace('.', ',')
 
 def format_percentage_standard(value):
-    """Format percentage in standard form (already multiplied by 100) with comma as decimal separator"""
     if pd.isna(value):
         return None
     return f"{value:.4f}".replace('.', ',')
 
 def get_ledger_dataframe_with_variances(years_filter, kpi):
-    """Generate dataframe with variance - ONLY where ALL months in period have actuals"""
     matrix_rows = []
     
     for yr in years_filter:
         year_total, year_lgb, year_sari = 0.0, 0.0, 0.0
         year_complete = True
         year_months_with_actuals = 0
-        year_total_months = 12 if yr == 2026 else 12  # Assuming full years
         
-        # Track which months have actuals for the year
         months_with_actuals = {}
         
         for qtr in [1, 2, 3, 4]:
@@ -171,7 +176,6 @@ def get_ledger_dataframe_with_variances(years_filter, kpi):
                 
                 has_actual = not pd.isna(v_act)
                 
-                # For individual months: Calculate variance if actual exists
                 if has_actual:
                     lgb_var_millions = (v_lgb - v_act) / 1_000_000
                     lgb_var_pct = ((v_lgb - v_act) / v_act) * 100 if v_act != 0 else np.nan
@@ -206,7 +210,6 @@ def get_ledger_dataframe_with_variances(years_filter, kpi):
                 qtr_lgb += v_lgb
                 qtr_sari += v_sari
             
-            # Add monthly rows
             for month_data in months_data:
                 matrix_rows.append({
                     'Period Timeline': month_data['period'],
@@ -219,7 +222,6 @@ def get_ledger_dataframe_with_variances(years_filter, kpi):
                     'SARIMAX Variance %': month_data['sari_var_pct']
                 })
             
-            # Calculate quarter variances - ONLY if ALL 3 months have actuals
             if qtr_complete and len(qtr_months_with_actuals) == 3:
                 qtr_lgb_var_millions = (qtr_lgb - qtr_act) / 1_000_000
                 qtr_lgb_var_pct = ((qtr_lgb - qtr_act) / qtr_act) * 100 if qtr_act != 0 else np.nan
@@ -247,7 +249,6 @@ def get_ledger_dataframe_with_variances(years_filter, kpi):
             year_lgb += qtr_lgb
             year_sari += qtr_sari
         
-        # Calculate year variances - ONLY if ALL 12 months have actuals
         if year_complete and year_months_with_actuals == 12:
             yr_lgb_var_millions = (year_lgb - year_total) / 1_000_000
             yr_lgb_var_pct = ((year_lgb - year_total) / year_total) * 100 if year_total != 0 else np.nan
@@ -272,16 +273,13 @@ def get_ledger_dataframe_with_variances(years_filter, kpi):
         
     return pd.DataFrame(matrix_rows)
 
-# Generate the dataframe
 df_ledger = get_ledger_dataframe_with_variances(plot_years, selected_kpi)
 
-# Format the display dataframe
 display_df = df_ledger.copy()
 display_df['Observed Actuals'] = display_df['Observed Actuals'].apply(lambda x: f"R {x:,.2f}" if pd.notna(x) else "—")
 display_df['LightGBM Forecast'] = display_df['LightGBM Forecast'].apply(lambda x: f"R {x:,.2f}" if pd.notna(x) else "—")
 display_df['SARIMAX Forecast'] = display_df['SARIMAX Forecast'].apply(lambda x: f"R {x:,.2f}" if pd.notna(x) else "—")
 
-# Create variance display strings for LightGBM
 def format_lgb_variance(row):
     millions = row['LightGBM Variance (R Millions)']
     pct = row['LightGBM Variance %']
@@ -294,7 +292,6 @@ def format_lgb_variance(row):
         pct_str = format_percentage_standard(abs(pct))
         return f"{arrow} {millions_str} ({pct_str})"
 
-# Create variance display strings for SARIMAX
 def format_sari_variance(row):
     millions = row['SARIMAX Variance (R Millions)']
     pct = row['SARIMAX Variance %']
@@ -310,23 +307,19 @@ def format_sari_variance(row):
 display_df['LightGBM Variance'] = df_ledger.apply(format_lgb_variance, axis=1)
 display_df['SARIMAX Variance'] = df_ledger.apply(format_sari_variance, axis=1)
 
-# Select final columns
 final_df = display_df[['Period Timeline', 'Observed Actuals', 'LightGBM Forecast', 'SARIMAX Forecast', 'LightGBM Variance', 'SARIMAX Variance']]
 
-# Apply color styling function
 def color_variance(val):
     if val == "—" or pd.isna(val):
         return ''
     if '▲' in str(val):
-        return 'color: #10B981'  # Green for positive
+        return 'color: #10B981'
     elif '▼' in str(val):
-        return 'color: #EF4444'  # Red for negative
+        return 'color: #EF4444'
     return ''
 
-# Apply styling to the dataframe
 styled_df = final_df.style.map(color_variance, subset=['LightGBM Variance', 'SARIMAX Variance'])
 
-# Display with st.dataframe
 st.dataframe(
     styled_df,
     use_container_width=True,
@@ -342,9 +335,6 @@ st.dataframe(
     }
 )
 
-# -------------------------------------------------------------------------
-# ADDITIONAL EXECUTIVE SUMMARY WITH VARIANCE METRICS
-# -------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("🎯 Variance Analysis Summary (Complete Data Only)")
 
@@ -376,4 +366,4 @@ with col_v3:
     )
 
 st.markdown("---")
-st.caption("📌 **Note:** Variance calculations are shown ONLY where complete data exists (all months in the period have actuals). Individual months show variance when actual data exists. Quarter and Year totals only show variance when ALL months in that period have actual data.")
+st.caption("📌 **Note:** Variance calculations are shown ONLY where complete data exists. ▲ Green = Positive variance (forecast exceeded actuals) | ▼ Red = Negative variance (forecast fell short of actuals)")
